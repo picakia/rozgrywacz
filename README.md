@@ -1,0 +1,5 @@
+# Rozgrywacz
+
+## Usage
+
+* npm run
