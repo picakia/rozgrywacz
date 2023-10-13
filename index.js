@@ -96,7 +96,37 @@ const processServerMessages = async (data) => {
       const winner = stanLogLine
         .split('WynikGry.WygranyGracz: ')[1]
         .replaceAll('"', '');
-      //console.log('[INFO STAN]', stanLogLine, winner);
+
+      // Should be fixed by server
+      if (!winner) {
+        return
+        /*for (const bot of Object.keys(processes)) {
+          if (bot == 'server') continue;
+          processes[bot].kill();
+        }
+
+        const czasRuchuLogLine = String(data)
+          .split('\n')
+          .find((item) => item.includes('arenaFlow()'));
+        const loser = czasRuchuLogLine.split('dla gracza: ')[1];
+        console.log('[INFO STAN 2] Winner missing', czasRuchuLogLine, loser);
+        const winners = Object.keys(currentGame).filter(
+          (key) => key != loser && key != 'name'
+        );
+        console.log('[DEBUG] winners', winners);
+        for (const winner of winners) {
+          if (winner == 'name') continue;
+          currentGame[winner].wins++;
+        }
+        waiters.gameCounted = true;
+
+        console.log('[BUGGED WygranyGracz]');
+        console.dir(currentGame, { depth: null });
+        return*/
+      }
+
+      console.log('[INFO STAN] LOG LINE', stanLogLine, winner);
+      console.log('[INFO STAN] WINNER', stanLogLine);
       currentGame[winner].wins++;
       waiters.gameCounted = true;
     }
@@ -138,7 +168,7 @@ const processServerMessages = async (data) => {
     ) {
       for (const bot of Object.keys(processes)) {
         if (bot == 'server') continue;
-        processes[bot].kill('SIGKILL');
+        processes[bot].kill();
       }
 
       console.log(
@@ -226,7 +256,6 @@ const main = async (binsToMake, rozgrywkaName, meczName) => {
   await sleep(100);
   processes.server.kill();
   console.log('[INFO] WAITING AFTER KILL');
-  await sleep(30000);
 };
 
 (async () => {
