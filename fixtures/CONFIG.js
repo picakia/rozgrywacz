@@ -8,6 +8,6 @@ const CONFIG = {
     path: './serwer/main.go',
     lang: 'go',
   },
-  rozgrywkiJSON: 'rozgrywkiExample.json',
+  rozgrywkiJSON: 'rozgrywkiTest.json',
 };
 export default CONFIG;

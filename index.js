@@ -65,9 +65,10 @@ const processServerMessages = async (data) => {
     console.log('[INFO KOLEJNOŚĆ]', currentGame);
   }
   // find kto Wygrał
-  if (data.includes('"KtoWygral"')) {
+  if (data.includes('WynikGry.WygranyGracz')) {
     if (waiters.gameCounted == undefined) {
-      const stanLogLine = String(data)
+      // OLD METHOD
+      /*const stanLogLine = String(data)
         .split('\n')
         .find((item) => item.includes('"KtoWygral"'));
       //console.log('[INFO STAN]', stanLogLine);
@@ -87,7 +88,15 @@ const processServerMessages = async (data) => {
       }
       const winner = Object.keys(currentGame).find(
         (key) => currentGame[key].numer == json.KtoWygral
-      );
+      );*/
+
+      const stanLogLine = String(data)
+        .split('\n')
+        .find((item) => item.includes('WynikGry.WygranyGracz'));
+      const winner = stanLogLine
+        .split('WynikGry.WygranyGracz: ')[1]
+        .replaceAll('"', '');
+      //console.log('[INFO STAN]', stanLogLine, winner);
       currentGame[winner].wins++;
       waiters.gameCounted = true;
     }
@@ -205,12 +214,19 @@ const main = async (binsToMake, rozgrywkaName, meczName) => {
     await waitForVar('gameCounted');
     waiters.gameCounted = undefined;
     console.log('[INFO SUMMARY]', currentGame);
+    // Reset invalidMoves
+    for (const [index, gracz] of binsToMake.entries()) {
+      if (index == 0) continue;
+      currentGame[gracz.name].invalidMoves = 0;
+    }
   }
   players[rozgrywkaName].push(currentGame);
   currentGame = {};
   //console.log('[INFO FULL SUMMARY]', players);
   await sleep(100);
   processes.server.kill();
+  console.log('[INFO] WAITING AFTER KILL');
+  await sleep(30000);
 };
 
 (async () => {

@@ -4,16 +4,22 @@ const createClientProcess = (client, gameID) => {
   let args = ['-nazwa', client.name];
   if (gameID) args.push('-gra', gameID);
   else args.push('-nowa');
-  if (client.moreArgs) {
-    for (const arg of client.moreArgs) {
-      args.push(arg);
-    }
-  }
   if (client.lang == 'node') {
     exec = 'node';
     args = [client.workDir, '--nazwa', client.name];
     if (gameID) args.push('--gra', `${gameID}`);
     else args.push('--nowa', 'true');
+  }
+  if (client.lang == 'cs') {
+    args = ['--nazwa', client.name];
+    if (gameID) args.push('--gra', `${gameID}`);
+    else args.push('--nowa', 'true');
+  }
+
+  if (client.moreArgs) {
+    for (const arg of client.moreArgs) {
+      args.push(arg);
+    }
   }
   const process = spawn(exec, args);
   const name = client.name;
