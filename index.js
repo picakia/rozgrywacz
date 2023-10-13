@@ -255,7 +255,7 @@ const main = async (binsToMake, rozgrywkaName, meczName) => {
   //console.log('[INFO FULL SUMMARY]', players);
   await sleep(100);
   processes.server.kill();
-  console.log('[INFO] WAITING AFTER KILL');
+  //console.log('[INFO] WAITING AFTER KILL');
 };
 
 (async () => {
