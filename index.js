@@ -6,9 +6,6 @@ import prepareBinaries from './fixtures/buildUtils.js';
 import createClientProcess from './fixtures/createClientProcess.js';
 import loadRozgrywki from './fixtures/loadRozgrywki.js';
 
-// count invalid card plays to stop the game
-let invalidCounter = 0;
-
 // for saving results
 let players = {};
 let currentGame = {};
@@ -38,7 +35,7 @@ const waitForVar = (varName, ms = CONFIG.defaultTimeout) =>
     loop();
   });
 
-const processServerMessages = (data) => {
+const processServerMessages = async (data) => {
   // find server listen
   if (data.includes('server listening')) waiters.serverListen = true;
   // find gameID
@@ -50,12 +47,17 @@ const processServerMessages = (data) => {
     const graczeLogLine = String(data)
       .split('\n')
       .find((item) => item.includes('kolejność graczy'));
-    const gracze = graczeLogLine
-      .replaceAll('"', '')
+    const graczeToTrim = graczeLogLine
+      .split('graczy:')[1]
       .replaceAll(' ', '')
-      .split(/[1-5]\./)
+      .split(/[1-5]\.\"/)
       .slice(1);
-    console.log(gracze);
+    let gracze = [];
+    for (const gracz of graczeToTrim) {
+      gracze.push(gracz.slice(0, -1));
+    }
+    console.log('[DEBUG] LOG GRACZE LINE', graczeLogLine);
+    console.log('[DEBUG] GRACZE', gracze);
     for (const [index, graczName] of gracze.entries()) {
       if (!currentGame[graczName]) currentGame[graczName] = {};
       currentGame[graczName].numer = index + 1;
@@ -90,37 +92,64 @@ const processServerMessages = (data) => {
       waiters.gameCounted = true;
     }
   }
-  // find Invalid card
-  if (data.includes('invalid card')) {
-    if (invalidCounter >= CONFIG.invalidMovesMax) {
-      console.log('[INFO] BOT wybrał zbyt dużo razy złą kartę, traci punkt!');
-      invalidCounter = 0;
-      const buggyPlayer = String(data)
+  // find Invalid card or color
+  if (data.includes('invalid')) {
+    const invalidLogLines = String(data)
+      .split('\n')
+      .filter(
+        (item) => item.includes('WykonajRuch()') && item.includes('invalid')
+      );
+    if (invalidLogLines.length == 0) return;
+    console.log(
+      '[DEBUG] INVALID COUNT',
+      invalidLogLines,
+      invalidLogLines.length
+    );
+    let buggyPlayer;
+    buggyPlayer = invalidLogLines[0]
+      .split('WykonajRuch(): ')[1]
+      .split(/ wykonał| żąda/)[0];
+    if (!buggyPlayer) {
+      buggyPlayer = invalidLogLines[1]
         .split('WykonajRuch(): ')[1]
         .split(/ wykonał| żąda/)[0];
-      console.log('[DEBUG]', buggyPlayer);
-      console.log('[BUGGED FINISH]');
-      console.dir(players, { depth: null });
-      processes[buggyPlayer].kill();
-      process.exit(1);
     }
-    invalidCounter++;
-  }
-  // find Invalid color
-  if (data.includes('invalid color')) {
-    if (invalidCounter >= CONFIG.invalidMovesMax) {
-      console.log('[INFO] BOT wybrał zbyt dużo razy zły kolor, traci punkt!');
-      invalidCounter = 0;
-      const buggyPlayer = String(data)
-        .split('WykonajRuch(): ')[1]
-        .split(/ wykonał| żąda/)[0];
-      console.log('[DEBUG]', buggyPlayer);
+
+    console.log('[DEBUG] Buggy player', buggyPlayer);
+    if (currentGame[buggyPlayer].invalidMoves)
+      currentGame[buggyPlayer].invalidMoves += invalidLogLines.length;
+    else currentGame[buggyPlayer].invalidMoves = invalidLogLines.length;
+
+    console.log(
+      `[INFO] BOT ${buggyPlayer} wybrał złą kartę lub zły kolor, to już ${currentGame[buggyPlayer].invalidMoves} raz!`
+    );
+    if (
+      currentGame[buggyPlayer].invalidMoves >= CONFIG.invalidMovesMax &&
+      waiters.gameCounted == undefined
+    ) {
+      for (const bot of Object.keys(processes)) {
+        if (bot == 'server') continue;
+        processes[bot].kill('SIGKILL');
+      }
+
+      console.log(
+        `[INFO] BOT ${buggyPlayer} wybrał zbyt dużo razy złą kartę lub zły kolor, traci punkt!`
+      );
+
+      const winners = Object.keys(currentGame).filter(
+        (key) => key != buggyPlayer && key != 'name'
+      );
+      console.log('[DEBUG] winners', winners);
+      for (const winner of winners) {
+        if (winner == 'name') continue;
+        currentGame[winner].wins++;
+      }
+      waiters.gameCounted = true;
+
       console.log('[BUGGED FINISH]');
-      console.dir(players, { depth: null });
-      processes[buggyPlayer].kill();
-      process.exit(1);
+      console.dir(currentGame, { depth: null });
+      //process.exit(1);
     }
-    invalidCounter++;
   }
 };
 
@@ -181,7 +210,6 @@ const main = async (binsToMake, rozgrywkaName, meczName) => {
   currentGame = {};
   //console.log('[INFO FULL SUMMARY]', players);
   await sleep(100);
-  invalidCounter = 0;
   processes.server.kill();
 };
 

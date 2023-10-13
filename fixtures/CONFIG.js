@@ -1,5 +1,5 @@
 const CONFIG = {
-  numOfGames: 5,
+  numOfGames: 10,
   defaultTimeout: 100,
   invalidMovesMax: 100,
   turtleServer: {
