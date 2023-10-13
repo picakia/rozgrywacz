@@ -4,7 +4,7 @@ import fs from 'fs/promises';
 import CONFIG from './fixtures/CONFIG.js';
 import prepareBinaries from './fixtures/buildUtils.js';
 import createClientProcess from './fixtures/createClientProcess.js';
-import rozgrywki from './rozgrywki.json' assert { type: 'json' };
+import loadRozgrywki from './fixtures/loadRozgrywki.js';
 
 // count invalid card plays to stop the game
 let invalidCounter = 0;
@@ -92,7 +92,7 @@ const processServerMessages = (data) => {
   }
   // find Invalid card
   if (data.includes('invalid card')) {
-    if (invalidCounter == 6) {
+    if (invalidCounter >= CONFIG.invalidMovesMax) {
       console.log('[INFO] BOT wybrał zbyt dużo razy złą kartę, traci punkt!');
       invalidCounter = 0;
       const buggyPlayer = String(data)
@@ -108,7 +108,7 @@ const processServerMessages = (data) => {
   }
   // find Invalid color
   if (data.includes('invalid color')) {
-    if (invalidCounter == 6) {
+    if (invalidCounter >= CONFIG.invalidMovesMax) {
       console.log('[INFO] BOT wybrał zbyt dużo razy zły kolor, traci punkt!');
       invalidCounter = 0;
       const buggyPlayer = String(data)
@@ -180,11 +180,13 @@ const main = async (binsToMake, rozgrywkaName, meczName) => {
   players[rozgrywkaName].push(currentGame);
   currentGame = {};
   //console.log('[INFO FULL SUMMARY]', players);
-  await sleep(500);
+  await sleep(100);
+  invalidCounter = 0;
   processes.server.kill();
 };
 
 (async () => {
+  const rozgrywki = await loadRozgrywki();
   for (const rozgrywka of rozgrywki) {
     for (const mecz of rozgrywka.mecze) {
       let binsToMake = [CONFIG.turtleServer, ...mecz.boty];
