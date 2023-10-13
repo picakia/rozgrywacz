@@ -1,0 +1,59 @@
+[
+  {
+    "name": "Kolejka1",
+    "mecze": [
+      {
+        "boty": [
+          {
+            "displayName": "FastZlowie",
+            "name": "greedybot",
+            "workDir": "../hackathon/gra_go",
+            "path": "./klient/greedybot/main.go",
+            "lang": "go"
+          },
+          {
+            "displayName": "FastZlowie old",
+            "name": "greedybotv1",
+            "workDir": "../otherBots",
+            "lang": "goBin"
+          }
+        ]
+      },
+      {
+        "boty": [
+          {
+            "displayName": "FastZlowie",
+            "name": "greedybot",
+            "workDir": "../hackathon/gra_go",
+            "path": "./klient/greedybot/main.go",
+            "lang": "go"
+          },
+          {
+            "displayName": "AllInclusive",
+            "name": "AllInclusiveV2",
+            "workDir": "../otherBots",
+            "lang": "goBin",
+            "moreArgs": ["-bot", "botv2"]
+          }
+        ]
+      },
+      {
+        "boty": [
+          {
+            "displayName": "FastZlowie",
+            "name": "greedybot",
+            "workDir": "../hackathon/gra_go",
+            "path": "./klient/greedybot/main.go",
+            "lang": "go"
+          },
+          {
+            "displayName": "PedzaceZolwiePoTurecku",
+            "name": "PedzaceZolwiePoTurecku",
+            "workDir": "../otherBots",
+            "lang": "goBin"
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -1,60 +1,30 @@
 import { spawn } from 'child_process';
 import { basename } from 'path';
+import fs from 'fs/promises';
+import CONFIG from './fixtures/CONFIG.js';
+import prepareBinaries from './fixtures/buildUtils.js';
+import createClientProcess from './fixtures/createClientProcess.js';
+import rozgrywki from './rozgrywki.json' assert { type: 'json' };
 
+// count invalid card plays to stop the game
+let invalidCounter = 0;
+
+// for saving results
+let players = {};
+let currentGame = {};
+
+// for syncing
 let waiters = {
   serverListen: undefined,
   gameID: undefined,
   gameCounted: undefined,
 };
 
-let numOfGames = 1;
+let processes = {};
 
-let binsToMake = [
-  {
-    name: 'turtleServer',
-    workDir: '../turniej/gra_go',
-    path: './serwer/main.go',
-  },
-  {
-    name: 'greedybot',
-    workDir: '../hackathon/gra_go',
-    path: './klient/greedybot/main.go',
-  },
-  {
-    name: 'random',
-    workDir: '../hackathon/gra_go',
-    path: './klient/random/main.go',
-  },
-];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-let players = {};
-
-const singleBin = (name, workDir, path) =>
-  new Promise((resolve, reject) => {
-    const process = spawn('go', ['build', '-C', workDir, '-o', name, path]);
-    process.stdout.on('data', (data) => {
-      console.log(`(${name}) [INFO] \n${data}`);
-    });
-
-    process.stderr.on('data', (data) => {
-      console.error(`(${name}) [ERROR] ${data}`);
-    });
-
-    process.on('close', (code) => {
-      console.log(`(${name}) [BUILD FINISHED] CODE: ${code}`);
-      if (code == 0) resolve(0);
-      else reject(code);
-    });
-  });
-
-const prepareBinaries = async () => {
-  for (const binToMake of binsToMake) {
-    await singleBin(binToMake.name, binToMake.workDir, binToMake.path);
-  }
-  return 0;
-};
-
-const waitForVar = (varName, ms = 1000) =>
+const waitForVar = (varName, ms = CONFIG.defaultTimeout) =>
   new Promise((resolve) => {
     const loop = () => {
       if (waiters[varName] !== undefined) {
@@ -69,7 +39,13 @@ const waitForVar = (varName, ms = 1000) =>
   });
 
 const processServerMessages = (data) => {
+  // find server listen
   if (data.includes('server listening')) waiters.serverListen = true;
+  // find gameID
+  if (data.includes('nowaGra()')) {
+    waiters.gameID = String(data).split(' nowaGra')[0].split(' ').at(-1);
+  }
+  // find kolejność graczy
   if (data.includes('kolejność graczy')) {
     const graczeLogLine = String(data)
       .split('\n')
@@ -81,28 +57,70 @@ const processServerMessages = (data) => {
       .slice(1);
     console.log(gracze);
     for (const [index, graczName] of gracze.entries()) {
-      players[graczName].numer = index + 1;
+      if (!currentGame[graczName]) currentGame[graczName] = {};
+      currentGame[graczName].numer = index + 1;
     }
-    console.log('[INFO KOLEJNOSC]', players);
+    console.log('[INFO KOLEJNOŚĆ]', currentGame);
   }
+  // find kto Wygrał
   if (data.includes('"KtoWygral"')) {
-    const stanLogLine = String(data)
-      .split('\n')
-      .find((item) => item.includes('"KtoWygral"'));
-    //console.log('[INFO STAN]', stanLogLine);
-    const json = JSON.parse(stanLogLine.split('stan: ')[1]);
-    console.log('[INFO STAN]', json);
-    const winner = Object.keys(players).find(
-      (key) => players[key].numer == json.KtoWygral
-    );
-    players[winner].wins++;
-    waiters.gameCounted = true;
+    if (waiters.gameCounted == undefined) {
+      const stanLogLine = String(data)
+        .split('\n')
+        .find((item) => item.includes('"KtoWygral"'));
+      //console.log('[INFO STAN]', stanLogLine);
+      let json;
+      try {
+        json = JSON.parse(stanLogLine.split('stan: ')[1]);
+      } catch (err) {
+        console.log('[SERVER ERROR] Server returned unfinished JSON');
+        waiters.gameCounted = true;
+        return;
+      }
+      console.log('[INFO STAN]', json);
+      if (json.KtoWygral < 1) {
+        console.log('[SERVER ERROR] Server returned -1 as KtoWygral');
+        waiters.gameCounted = true;
+        return;
+      }
+      const winner = Object.keys(currentGame).find(
+        (key) => currentGame[key].numer == json.KtoWygral
+      );
+      currentGame[winner].wins++;
+      waiters.gameCounted = true;
+    }
   }
-};
-
-const processClientMessages = (data) => {
-  if (data.includes('Nowa gra')) {
-    waiters.gameID = String(data).split('"')[1];
+  // find Invalid card
+  if (data.includes('invalid card')) {
+    if (invalidCounter == 6) {
+      console.log('[INFO] BOT wybrał zbyt dużo razy złą kartę, traci punkt!');
+      invalidCounter = 0;
+      const buggyPlayer = String(data)
+        .split('WykonajRuch(): ')[1]
+        .split(/ wykonał| żąda/)[0];
+      console.log('[DEBUG]', buggyPlayer);
+      console.log('[BUGGED FINISH]');
+      console.dir(players, { depth: null });
+      processes[buggyPlayer].kill();
+      process.exit(1);
+    }
+    invalidCounter++;
+  }
+  // find Invalid color
+  if (data.includes('invalid color')) {
+    if (invalidCounter == 6) {
+      console.log('[INFO] BOT wybrał zbyt dużo razy zły kolor, traci punkt!');
+      invalidCounter = 0;
+      const buggyPlayer = String(data)
+        .split('WykonajRuch(): ')[1]
+        .split(/ wykonał| żąda/)[0];
+      console.log('[DEBUG]', buggyPlayer);
+      console.log('[BUGGED FINISH]');
+      console.dir(players, { depth: null });
+      processes[buggyPlayer].kill();
+      process.exit(1);
+    }
+    invalidCounter++;
   }
 };
 
@@ -110,65 +128,46 @@ const createServerProcess = (executable, ...params) => {
   const process = spawn(executable, [...params]);
   const name = basename(executable);
   process.stdout.on('data', (data) => {
-    console.log(`(${name}) [INFO] \n${data}`);
+    console.log(`(${name}) [INFO] ${data}`);
+    processServerMessages(data);
   });
 
   process.stderr.on('data', (data) => {
-    console.error(`(${name}) [ERROR] ${data}`);
+    console.log(`(${name}) [EINFO] ${data}`);
     processServerMessages(data);
   });
 
   process.on('close', (code) => {
     console.log(`(${name}) [EXIT] CODE: ${code}`);
   });
+  return process;
 };
 
-const createClientProcess = (executable, ...params) => {
-  const process = spawn(executable, [...params]);
-  const name = basename(executable);
-  process.stdout.on('data', (data) => {
-    console.log(`(${name}) [INFO] \n${data}`);
-  });
-
-  process.stderr.on('data', (data) => {
-    console.error(`(${name}) [ERROR] ${data}`);
-    processClientMessages(data);
-  });
-
-  process.on('close', (code) => {
-    console.log(`(${name}) [EXIT] CODE: ${code}`);
-  });
-};
-
-const main = async () => {
-  await prepareBinaries();
+const main = async (binsToMake, rozgrywkaName, meczName) => {
+  if (!players[rozgrywkaName]) players[rozgrywkaName] = [];
+  currentGame = { name: meczName };
+  await prepareBinaries(binsToMake);
   const server = binsToMake[0];
-  createServerProcess(`${server.workDir}/${server.name}`);
+  processes.server = createServerProcess(`${server.workDir}/${server.name}`);
 
   await waitForVar('serverListen', 3000);
 
-  for (let i = 0; i < numOfGames; i++) {
+  for (let i = 0; i < CONFIG.numOfGames; i++) {
+    console.log(
+      `-------------------------- ROZPOCZYNAM GRĘ ${
+        i + 1
+      } --------------------------`
+    );
     for (const [index, gracz] of binsToMake.entries()) {
       if (index == 0) continue;
       if (index == 1) {
-        createClientProcess(
-          `${gracz.workDir}/${gracz.name}`,
-          '-nazwa',
-          gracz.name,
-          '-nowa'
-        );
-        players[gracz.name] = { wins: 0 };
+        processes[gracz.name] = createClientProcess(gracz);
+        if (!currentGame[gracz.name]) currentGame[gracz.name] = { wins: 0 };
         await waitForVar('gameID');
         continue;
       }
-      createClientProcess(
-        `${gracz.workDir}/${gracz.name}`,
-        '-nazwa',
-        gracz.name,
-        '-gra',
-        waiters.gameID
-      );
-      players[gracz.name] = { wins: 0 };
+      processes[gracz.name] = createClientProcess(gracz, waiters.gameID);
+      if (!currentGame[gracz.name]) currentGame[gracz.name] = { wins: 0 };
       if (index == binsToMake.length - 1) {
         waiters.gameID = undefined;
         continue;
@@ -176,10 +175,28 @@ const main = async () => {
     }
     await waitForVar('gameCounted');
     waiters.gameCounted = undefined;
-    console.log("[INFO SUMMARY]", players);
+    console.log('[INFO SUMMARY]', currentGame);
   }
+  players[rozgrywkaName].push(currentGame);
+  currentGame = {};
+  //console.log('[INFO FULL SUMMARY]', players);
+  await sleep(500);
+  processes.server.kill();
 };
 
 (async () => {
-  await main();
+  for (const rozgrywka of rozgrywki) {
+    for (const mecz of rozgrywka.mecze) {
+      let binsToMake = [CONFIG.turtleServer, ...mecz.boty];
+      let meczName = '';
+      for (const [index, bot] of mecz.boty.entries()) {
+        if (index == mecz.boty.length - 1) meczName += `${bot.displayName}`;
+        else meczName += `${bot.displayName} vs `;
+      }
+      await main(binsToMake, rozgrywka.name, meczName);
+    }
+  }
+  console.log(`-------------------------- FINISH --------------------------`);
+  console.dir(players, { depth: null });
+  await fs.writeFile('WYNIKI.json', JSON.stringify(players, null, 2));
 })();

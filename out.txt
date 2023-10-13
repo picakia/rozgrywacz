@@ -1,2 +1,0 @@
-(turtleServer) [BUILD FINISHED] CODE: 0
-(gracz1) [BUILD FINISHED] CODE: 0
